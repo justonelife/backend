@@ -7,6 +7,8 @@ services:
       POSTGRES_USER: ${DATABASE_USERNAME}
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
       POSTGRES_DB: ${DATABASE_NAME}
+    networks:
+      - postgres-network
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
@@ -16,6 +18,21 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  pgadmin:
+    image: 'dpage/pgadmin4'
+    ports:
+      - 15433:80
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - postgres-network
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin/
 
   app:
     build:
@@ -35,7 +52,15 @@ services:
       postgres:
         condition: service_healthy
     command: npm run start:dev
+    networks:
+      - postgres-network
 
 volumes:
   pgdata:
     driver: local
+  pgadmin-data:
+    driver: local
+
+networks:
+  postgres-network:
+    driver: bridge

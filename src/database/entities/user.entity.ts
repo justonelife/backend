@@ -7,7 +7,7 @@ import { BeforeInsert } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 
 @ObjectType()
-@Entity()
+@Entity({ name: 'users' })
 export class User extends BaseEntity {
   @Field()
   @Column({ unique: true })
@@ -28,9 +28,9 @@ export class User extends BaseEntity {
   @BeforeInsert()
   async hashPassword() {
     const configService = new ConfigService();
-    const saltRounds = configService.get<number>('PASSWORD_SALT_ROUNDS');
+    const saltRounds = configService.get<string>('PASSWORD_SALT_ROUNDS');
     if (this.password) {
-      this.password = await bcrypt.hash(this.password, saltRounds);
+      this.password = await bcrypt.hash(this.password, parseInt(saltRounds, 10));
     }
   }
 }
