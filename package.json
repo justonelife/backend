@@ -25,6 +25,7 @@
     "db:seed": "ts-node -r tsconfig-paths/register src/database/seeds/run-seed.ts"
   },
   "dependencies": {
+    "@apollo/server": "^4.12.2",
     "@nestjs/apollo": "^12.1.0",
     "@nestjs/common": "^10.3.8",
     "@nestjs/config": "^3.2.2",
@@ -36,7 +37,6 @@
     "@nestjs/swagger": "^7.3.1",
     "@nestjs/throttler": "^5.1.2",
     "@nestjs/typeorm": "^10.0.2",
-    "apollo-server-express": "^3.13.0",
     "bcrypt": "^5.1.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
