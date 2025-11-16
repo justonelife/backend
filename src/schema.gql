@@ -8,6 +8,12 @@ type AuthPayload {
   user: User!
 }
 
+input CreateUserInput {
+  email: String!
+  password: String!
+  roles: [String!]
+}
+
 """
 A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
 """
@@ -19,10 +25,13 @@ input LoginInput {
 }
 
 type Mutation {
+  createUser(createUserInput: CreateUserInput!): User!
+  deleteUser(id: ID!): Boolean!
   login(loginInput: LoginInput!): AuthPayload!
   logout: Boolean!
   refreshToken(refreshToken: String!): AuthPayload!
   register(registerInput: RegisterInput!): User!
+  updateUser(updateUserInput: UpdateUserInput!): User!
 }
 
 type Permission {
@@ -33,8 +42,9 @@ type Permission {
 }
 
 type Query {
-  listUsers: [User!]!
   me: User!
+  user(id: ID!): User!
+  users: [User!]!
 }
 
 input RegisterInput {
@@ -48,6 +58,14 @@ type Role {
   name: String!
   permissions: [Permission]
   updatedAt: DateTime!
+}
+
+input UpdateUserInput {
+  email: String
+  id: ID!
+  isActive: Boolean
+  password: String
+  roles: [String!]
 }
 
 type User {
