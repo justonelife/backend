@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { DeepPartial, In, Repository } from 'typeorm';
 import { User } from '../database/entities/user.entity';
 import { Role } from '../database/entities/role.entity';
 import { RegisterInput } from '../auth/dto/register.input';
@@ -44,7 +44,7 @@ export class UsersService {
   async create(registerInput: RegisterInput): Promise<User> {
     const userRole = await this.rolesRepository.findOne({ where: { name: 'user' } });
     if (!userRole) {
-      throw new Error('Default role "user" not found. Please seed the database.');
+      throw new Error('Default role "user" not found.');
     }
 
     const newUser = this.usersRepository.create({
@@ -60,6 +60,11 @@ export class UsersService {
     const existing = await this.usersRepository.findOne({ where: { email: input.email } });
     if (existing) throw new ConflictException('Email already exists');
 
+    if (input.username) {
+      const existingUsername = await this.usersRepository.findOne({ where: { username: input.username } });
+      if (existingUsername) throw new ConflictException('Username already exists');
+    }
+
     let roles: Role[] = [];
     if (input.roles && input.roles.length > 0) {
       roles = await this.rolesRepository.findBy({ name: In(input.roles) });
@@ -73,9 +78,8 @@ export class UsersService {
     }
 
     const user = this.usersRepository.create({
-      email: input.email,
+      ...input,
       password: input.password, // @BeforeInsert will hash this
-      isActive: true,
       roles: roles,
     });
 
@@ -85,27 +89,41 @@ export class UsersService {
   async updateUser(input: UpdateUserInput): Promise<User> {
     const user = await this.findById(input.id);
 
-    if (input.email && input.email !== user.email) {
-      const existing = await this.usersRepository.findOne({ where: { email: input.email } });
+    // Destructure ID and password, handle them separately
+    const { id, password, ...updates } = input;
+
+    if (updates.email && updates.email !== user.email) {
+      const existing = await this.usersRepository.findOne({ where: { email: updates.email } });
       if (existing) throw new ConflictException('Email already in use');
-      user.email = input.email;
     }
 
-    if (input.password) {
+    if (updates.username && updates.username !== user.username) {
+      const existing = await this.usersRepository.findOne({ where: { username: updates.username } });
+      if (existing) throw new ConflictException('Username already in use');
+    }
+
+    // Manual password hash
+    if (password) {
       const saltRounds = this.configService.get<string>('PASSWORD_SALT_ROUNDS');
-      user.password = await bcrypt.hash(input.password, parseInt(saltRounds, 10));
+      user.password = await bcrypt.hash(password, parseInt(saltRounds, 10));
+      user.passwordChangedAt = new Date(); // Track when password was changed
     }
 
-    if (input.isActive !== undefined) {
-      user.isActive = input.isActive;
-    }
-
-    if (input.roles) {
-      const roles = await this.rolesRepository.findBy({ name: In(input.roles) });
-      if (roles.length !== input.roles.length) {
+    // Handle roles relation
+    if (updates.roles) {
+      const roles = await this.rolesRepository.findBy({ name: In(updates.roles) });
+      if (roles.length !== updates.roles.length) {
         throw new NotFoundException('One or more roles not found');
       }
       user.roles = roles;
+    }
+
+    // Merge scalar fields
+    this.usersRepository.merge(user, updates as DeepPartial<User>);
+
+    // Handle metadata (assuming it's a JSON string from GQL)
+    if (updates.metadata) {
+      user.metadata = JSON.parse(updates.metadata);
     }
 
     return this.usersRepository.save(user);
@@ -117,5 +135,28 @@ export class UsersService {
       throw new NotFoundException(`User with ID "${id}" not found`);
     }
     return true;
+  }
+
+  async handleSuccessfulLogin(userId: string): Promise<void> {
+    await this.usersRepository.update(userId, {
+      lastLoginAt: new Date(),
+      failedLoginAttempts: 0,
+      isLocked: false,
+      lockUntil: null,
+    });
+  }
+
+  async handleFailedLogin(userId: string): Promise<void> {
+    const user = await this.findById(userId);
+    if (!user) return;
+
+    user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+
+    // NOTE: Lock after 5 attempts
+    if (user.failedLoginAttempts >= 5) {
+      user.isLocked = true;
+      user.lockUntil = new Date(Date.now() + 15 * 60 * 1000); // 15 min lock
+    }
+    await this.usersRepository.save(user);
   }
 }

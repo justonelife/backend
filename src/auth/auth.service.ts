@@ -32,10 +32,30 @@ export class AuthService {
 
   async login(loginInput: LoginInput): Promise<AuthPayload> {
     const user = await this.usersService.findByEmail(loginInput.email);
-    if (!user || !(await bcrypt.compare(loginInput.password, user.password))) {
+
+    if (!user) {
       throw new UnauthorizedException('Invalid credentials.');
     }
-    return this.generateTokens(user);
+
+    if (!user.isActive) {
+      throw new UnauthorizedException('User account is inactive');
+    }
+
+    if (user.isLocked && (!user.lockUntil || user.lockUntil > new Date())) {
+      throw new UnauthorizedException('User account is locked.');
+    }
+
+    if (!user.password || !(await bcrypt.compare(loginInput.password, user.password))) {
+      await this.usersService.handleFailedLogin(user.id);
+      throw new UnauthorizedException('Invalid credentials.');
+    }
+
+    // Login successful
+    await this.usersService.handleSuccessfulLogin(user.id);
+
+    // We need the updated user data for the token/payload
+    const updatedUser = await this.usersService.findById(user.id);
+    return this.generateTokens(updatedUser);
   }
 
   async refreshToken(token: string): Promise<AuthPayload> {
@@ -96,8 +116,8 @@ export class AuthService {
 
   async validateUser(payload: { sub: string }): Promise<User> {
     const user = await this.usersService.findById(payload.sub);
-    if (!user || !user.isActive) {
-      throw new UnauthorizedException();
+    if (!user || !user.isActive || user.isLocked) {
+      throw new UnauthorizedException('User is invalid, inactive, or locked');
     }
     return user;
   }

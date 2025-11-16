@@ -9,9 +9,16 @@ type AuthPayload {
 }
 
 input CreateUserInput {
+  avatarUrl: String
   email: String!
+  emailVerified: Boolean
+  firstName: String
+  isActive: Boolean
+  lastName: String
   password: String!
+  phoneNumber: String
   roles: [String!]
+  username: String
 }
 
 """
@@ -61,18 +68,43 @@ type Role {
 }
 
 input UpdateUserInput {
+  avatarUrl: String
   email: String
+  emailVerified: Boolean
+  firstName: String
   id: ID!
   isActive: Boolean
+  isLocked: Boolean
+  language: String
+  lastName: String
+  lockUntil: DateTime
+  metadata: String
   password: String
+  phoneNumber: String
   roles: [String!]
+  timezone: String
+  username: String
 }
 
 type User {
+  avatarUrl: String
   createdAt: DateTime!
   email: String!
+  emailVerified: Boolean!
+  firstName: String
   id: ID!
   isActive: Boolean!
+  isLocked: Boolean!
+  language: String
+  lastActiveAt: DateTime
+  lastLoginAt: DateTime
+  lastName: String
+  lockUntil: DateTime
+  metadata: String
+  passwordChangedAt: DateTime
+  phoneNumber: String
   roles: [Role]
+  timezone: String
   updatedAt: DateTime!
+  username: String
 }
