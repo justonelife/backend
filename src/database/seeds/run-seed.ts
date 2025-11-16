@@ -41,12 +41,44 @@ async function runSeed() {
   if (password) {
     password = await bcrypt.hash(password, parseInt(saltRounds, 10));
   }
-  await userRepository.save({
-    email: 'admin@example.com',
-    password: password,
-    roles: [adminRole],
-    isActive: true,
-  });
+  await userRepository.save(
+    userRepository.create({
+      email: 'admin@example.com',
+      username: 'admin',
+      firstName: 'Admin',
+      lastName: 'User',
+      password: password,
+      roles: [adminRole],
+      isActive: true,
+      emailVerified: true,
+    }),
+  );
+
+  console.log('Admin user created.');
+
+  // --- Create Dummy Users ---
+  console.log('Creating 30 dummy users...');
+  const dummyUsers: Partial<User>[] = [];
+  const dummyPassword = await bcrypt.hash('Password123!', parseInt(saltRounds, 10));
+
+  for (let i = 1; i <= 30; i++) {
+    const user = {
+      email: `user${i}@example.com`,
+      username: `user${i}`,
+      firstName: `FirstName${i}`,
+      lastName: `LastName${i}`,
+      password: dummyPassword,
+      roles: [userRole],
+      isActive: i % 5 !== 0, // Make every 5th user inactive
+      isLocked: i % 10 === 0, // Make every 10th user locked
+      emailVerified: true,
+    };
+    dummyUsers.push(user);
+  }
+
+  // Use create + save to trigger @BeforeInsert hook for all
+  const userEntities = userRepository.create(dummyUsers);
+  await userRepository.save(userEntities, { chunk: 10 }); // Save in chunks
 
   console.log('Seeding complete!');
   await app.close();

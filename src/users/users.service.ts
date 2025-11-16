@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DeepPartial, In, Repository } from 'typeorm';
+import { DeepPartial, In, Repository, SelectQueryBuilder } from 'typeorm';
 import { User } from '../database/entities/user.entity';
 import { Role } from '../database/entities/role.entity';
 import { RegisterInput } from '../auth/dto/register.input';
@@ -8,6 +8,9 @@ import { ConfigService } from '@nestjs/config';
 import { CreateUserInput } from './dto/create-user.input';
 import { UpdateUserInput } from './dto/update-user.input';
 import * as bcrypt from 'bcrypt';
+import { ListUsersInput } from './dto/list-users.input';
+import { UserFilterInput } from './dto/user-filter.input';
+import { StringFilterInput, BooleanFilterInput } from './dto/filter-operator.input';
 
 @Injectable()
 export class UsersService {
@@ -158,5 +161,113 @@ export class UsersService {
       user.lockUntil = new Date(Date.now() + 15 * 60 * 1000); // 15 min lock
     }
     await this.usersRepository.save(user);
+  }
+
+  /**
+  * Finds all users with pagination, sorting, and filtering.
+  * This uses QueryBuilder for dynamic query construction.
+  */
+  async list(input: ListUsersInput): Promise<[User[], number]> {
+    const { pagination, sort, filter } = input;
+    const { skip, limit } = pagination;
+
+    // --- Define whitelisted fields for safety ---
+    // Prevents sorting/filtering on sensitive fields like 'password'
+    const allowedSortFields = [
+      'id', 'email', 'username', 'firstName', 'lastName',
+      'isActive', 'isLocked', 'createdAt', 'updatedAt',
+      'lastLoginAt', 'lastActiveAt'
+    ];
+
+    // Alias for our main table
+    const qb = this.usersRepository.createQueryBuilder('user');
+
+    // --- 1. APPLY FILTERS ---
+    if (filter) {
+      this.applyFiltersToQuery(qb, filter);
+    }
+
+    // --- 2. APPLY SORTING ---
+    if (sort && allowedSortFields.includes(sort.field)) {
+      qb.orderBy(`user.${sort.field}`, sort.order);
+    } else {
+      // Default sort
+      qb.orderBy('user.createdAt', 'DESC');
+    }
+
+    // --- 3. APPLY PAGINATION ---
+    qb.skip(skip).take(limit);
+
+    // Eager load relations
+    qb.leftJoinAndSelect('user.roles', 'roles');
+
+    // Get results and total count
+    return qb.getManyAndCount();
+  }
+
+  /**
+     * Helper function to dynamically apply filters to the QueryBuilder
+     */
+  private applyFiltersToQuery(qb: SelectQueryBuilder<User>, filter: UserFilterInput) {
+    // This is where you map your UserFilterInput to database columns
+    // We use unique parameter names (e.g., :email_eq) to avoid collisions
+
+    if (filter.email) {
+      this.buildWhereClause(qb, 'user.email', filter.email, 'email');
+    }
+    if (filter.username) {
+      this.buildWhereClause(qb, 'user.username', filter.username, 'username');
+    }
+    if (filter.firstName) {
+      this.buildWhereClause(qb, 'user.firstName', filter.firstName, 'firstName');
+    }
+    if (filter.lastName) {
+      this.buildWhereClause(qb, 'user.lastName', filter.lastName, 'lastName');
+    }
+    if (filter.isActive) {
+      this.buildWhereClause(qb, 'user.isActive', filter.isActive, 'isActive');
+    }
+    if (filter.isLocked) {
+      this.buildWhereClause(qb, 'user.isLocked', filter.isLocked, 'isLocked');
+    }
+  }
+
+  /**
+     * Generic helper to build WHERE clauses for different operators
+     */
+  private buildWhereClause(
+    qb: SelectQueryBuilder<User>,
+    field: string, // e.g., 'user.email'
+    criteria: StringFilterInput | BooleanFilterInput,
+    paramName: string, // e.g., 'email'
+  ) {
+    if (criteria._eq !== undefined) {
+      qb.andWhere(`${field} = :${paramName}_eq`, { [`${paramName}_eq`]: criteria._eq });
+    }
+    if (criteria._neq !== undefined) {
+      qb.andWhere(`${field} != :${paramName}_neq`, { [`${paramName}_neq`]: criteria._neq });
+    }
+
+    // String-specific operators
+    if ('_contains' in criteria && criteria._contains !== undefined) {
+      qb.andWhere(`${field} ILIKE :${paramName}_contains`, { [`${paramName}_contains`]: `%${criteria._contains}%` });
+    }
+    if ('_not_contains' in criteria && criteria._not_contains !== undefined) {
+      qb.andWhere(`${field} NOT ILIKE :${paramName}_not_contains`, { [`${paramName}_not_contains`]: `%${criteria._not_contains}%` });
+    }
+    if ('_startsWith' in criteria && criteria._startsWith !== undefined) {
+      qb.andWhere(`${field} ILIKE :${paramName}_startsWith`, { [`${paramName}_startsWith`]: `${criteria._startsWith}%` });
+    }
+    if ('_endsWith' in criteria && criteria._endsWith !== undefined) {
+      qb.andWhere(`${field} ILIKE :${paramName}_endsWith`, { [`${paramName}_endsWith`]: `%${criteria._endsWith}` });
+    }
+    if ('_isEmpty' in criteria && criteria._isEmpty !== undefined) {
+      const condition = criteria._isEmpty ? 'IS NULL OR' : 'IS NOT NULL AND';
+      qb.andWhere(`${field} ${condition} ${field} = ''`);
+    }
+    if ('_isNotEmpty' in criteria && criteria._isNotEmpty !== undefined) {
+      const condition = criteria._isNotEmpty ? 'IS NOT NULL AND' : 'IS NULL OR';
+      qb.andWhere(`${field} ${condition} ${field} != ''`);
+    }
   }
 }
